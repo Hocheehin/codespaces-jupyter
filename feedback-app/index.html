@@ -46,7 +46,7 @@ p{margin:0}
 .muted{color:var(--muted)}
 .notice{border:1px dashed var(--line);border-radius:10px;padding:10px 14px;color:var(--muted);font-size:13.5px}
 label{display:flex;flex-direction:column;gap:5px;font-weight:500;font-size:14px}
-input[type=text],input[type=month],select,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%}
+input[type=text],input[type=password],input[type=month],select,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%}
 textarea{min-height:92px;resize:vertical}
 input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button{font:inherit;font-weight:600;font-size:14px;border-radius:8px;padding:9px 14px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
@@ -152,6 +152,7 @@ td.n,th.n{text-align:right}
     <a href="#dept" data-view="dept">Department</a>
     <a href="#dash" data-view="dash">Dashboard</a>
     <a href="#report" data-view="report">Monthly report</a>
+    <button type="button" id="logout" hidden style="padding:6px 12px">Sign out</button>
   </nav>
 </div></header>
 
@@ -230,6 +231,16 @@ td.n,th.n{text-align:right}
   </section>
 
   <!-- 4. Monthly report -->
+  <!-- Staff sign-in (standalone server only) -->
+  <section id="v-login" class="qr stack" hidden>
+    <form id="loginForm" class="panel stack" novalidate>
+      <div><h1>Staff sign-in</h1><p class="lede">Operations, departments and managers sign in to see cases and the dashboard.</p></div>
+      <label>Staff password<input type="password" id="lPass" autocomplete="current-password"></label>
+      <p id="lErr" role="alert" hidden style="color:var(--bad)"></p>
+      <button class="primary" type="submit" id="lBtn">Sign in</button>
+    </form>
+  </section>
+
   <section id="v-report" class="stack" hidden>
     <div class="row" style="justify-content:space-between;gap:12px">
       <div><h1>Monthly report to the HONH</h1><p class="lede">Built from every case logged in the chosen month.</p></div>
@@ -271,13 +282,33 @@ const local={
   load(){try{return JSON.parse(localStorage.getItem("fb-cases")||"[]")}catch(e){return[]}},
   save(c){const all=local.load().filter(x=>x.id!==c.id);all.push(c);try{localStorage.setItem("fb-cases",JSON.stringify(all))}catch(e){}S.cases=all;render()}
 };
-async function save(c){
+async function api(method,path,body){
+  const r=await fetch(path,{method,credentials:"same-origin",headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));
+  if(r.status===401&&path!=="api/login"){S.staff=false;render();toast("Please sign in again.")}
+  if(!r.ok){const e=new Error(j.error||"Request failed");e.status=r.status;throw e}
+  return j;
+}
+function putLocal(c){S.cases=S.cases.filter(x=>x.id!==c.id).concat([c]);render()}
+async function loadCases(){if(!S.staff)return;try{S.cases=(await api("GET","api/cases")).cases;render()}catch(_){}}
+async function save(c,isNew){
   c.updatedAt=now();
+  if(S.api){try{const out=isNew?await api("POST","api/cases",c):await api("PUT","api/cases/"+encodeURIComponent(c.id),c);if(S.staff){if(isNew)loadCases();else putLocal(out)}return out}
+    catch(e){if(e.status!==401)toast(e.status===429?"Too many submissions from this device. Please wait a few minutes.":e.status===400?e.message:"Couldn't send. Check your connection and try again.");throw e}}
   if(S.store){try{await S.store.doc(c.id).set(c)}catch(e){toast(e&&e.code==="not_granted"?"You don't have permission to save. Ask the owner for Contributor access.":"Couldn't save. Check your connection and try again.");throw e}}
   else if(HOSTED){toast(S.dbNull?"Sign in to claude.ai to submit. Nothing was sent.":"Still connecting. Try again in a few seconds.");throw new Error("no store")}
   else local.save(c);
+  return c;
 }
 function initStore(){
+  if(!HOSTED){
+    fetch("api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).catch(()=>null).then(me=>{
+      if(me&&typeof me.staff==="boolean"){S.api=true;S.live=true;S.staff=me.staff;setMode();render();loadCases();
+        setInterval(()=>{if(S.staff&&view()!=="scan"&&!document.hidden)loadCases()},8000)}
+      else{S.cases=local.load();render();setMode()}
+    });
+    render();return;
+  }
   S.cases=local.load();render();
   const timer=setTimeout(()=>{if(!S.live){S.dbNull=true;setMode()}},10000);
   const p=window.claude&&window.claude.use?window.claude.use("db"):Promise.resolve(null);
@@ -305,7 +336,10 @@ function view(){const v=(location.hash||"#scan").slice(1);return["scan","ops","d
 function render(){
   const v=view();
   document.querySelectorAll("nav a").forEach(a=>{if(a.dataset.view===v)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current")});
-  $("v-scan").hidden=v!=="scan";document.querySelector("header.bar").hidden=v==="scan";$("v-board").hidden=!(v==="ops"||v==="dept");$("v-report").hidden=v!=="report";$("v-dash").hidden=v!=="dash";
+  const gate=S.api&&!S.staff&&v!=="scan";
+  $("v-login").hidden=!gate;$("logout").hidden=!(S.api&&S.staff);
+  $("v-scan").hidden=v!=="scan";document.querySelector("header.bar").hidden=v==="scan";$("v-board").hidden=gate||!(v==="ops"||v==="dept");$("v-report").hidden=gate||v!=="report";$("v-dash").hidden=gate||v!=="dash";
+  if(gate)return;
   if(v==="scan")renderForm();else if(v==="report")renderReport();else if(v==="dash")renderDash();else renderBoard(v);
 }
 
@@ -340,12 +374,19 @@ $("form").addEventListener("submit",async e=>{
     createdAt:now(),ackAt:null,dept:null,assignedAt:null,info:"",closedAt:null,closeNote:"",
     updates:[{at:now(),kind:"system",who:"System",text:S.tab==="feedback"?"Feedback submitted through QR code":"Service request submitted through QR code (FacilityBot)"}]};
   $("fSubmit").disabled=true;
-  try{await save(c);
-    S.step="done";renderForm();$("doneRef").textContent=c.id;
+  try{const saved=await save(c,true);
+    S.step="done";renderForm();$("doneRef").textContent=saved.id;
     $("doneMsg").textContent=c.tab==="feedback"?"Keep this reference. Operations will acknowledge it within 1 working day.":"Keep this reference. Operations has your service request and will pass it to the right team.";
     $("form").reset();
   }catch(_){}finally{$("fSubmit").disabled=false}
 });
+$("loginForm").addEventListener("submit",async e=>{
+  e.preventDefault();$("lBtn").disabled=true;$("lErr").hidden=true;
+  try{await api("POST","api/login",{password:$("lPass").value});S.staff=true;$("lPass").value="";render();loadCases()}
+  catch(err){$("lErr").textContent=err.status===401?"That password is not right. Check it and try again.":err.status===429?"Too many attempts. Wait a few minutes and try again.":"Couldn't sign in. Check your connection.";$("lErr").hidden=false}
+  finally{$("lBtn").disabled=false}
+});
+$("logout").onclick=async()=>{try{await api("POST","api/logout")}catch(_){}S.staff=false;S.cases=[];render()};
 $("again").onclick=()=>{S.step="choose";renderForm()};
 
 /* board */
