@@ -57,14 +57,17 @@ button:disabled{opacity:.5;cursor:not-allowed}
 @media (max-width:560px){.grid2{grid-template-columns:1fr}}
 /* resident form */
 .qr{max-width:560px;margin:0 auto}
-.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.tab{text-align:left;padding:14px;border-radius:10px;border:2px solid var(--line);background:var(--surface);display:flex;flex-direction:column;gap:2px}
-.tab span{font-weight:400;color:var(--muted);font-size:13px}
-.tab[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.choose{display:grid;gap:14px}
+.big{text-align:left;padding:28px 22px;border-radius:14px;border:2px solid var(--accent);background:var(--accent-soft);display:flex;flex-direction:column;gap:6px;min-height:130px;justify-content:center}
+.big b{font-size:24px;color:var(--accent)}
+.big span{font-weight:400;color:var(--muted);font-size:15px}
+.big:hover,.big:active{background:var(--accent);}
+.big:hover b,.big:active b,.big:hover span,.big:active span{color:var(--accent-fg)}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{padding:7px 12px;border-radius:999px;font-weight:500}
 .chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .check{flex-direction:row;align-items:center;gap:8px;font-weight:400}
+.staff{order:9;text-align:center;font-size:13px;margin-top:24px}.staff a{color:var(--muted)}
 .done{text-align:center;padding:28px 16px}
 .done .ref{font-family:var(--mono);font-size:22px;margin:8px 0;color:var(--accent)}
 /* case board */
@@ -117,7 +120,7 @@ td.n,th.n{text-align:right}
 <header class="bar"><div class="wrap">
   <div class="brand"><b>Feedback &amp; FacilityBot</b><small>OPS_SOP_3.4_06 · PROTOTYPE</small></div>
   <nav aria-label="Role">
-    <a href="#scan" data-view="scan">QR form</a>
+    <a href="#scan" data-view="scan">QR page</a>
     <a href="#ops" data-view="ops">Operations</a>
     <a href="#dept" data-view="dept">Department</a>
     <a href="#report" data-view="report">Monthly report</a>
@@ -129,12 +132,16 @@ td.n,th.n{text-align:right}
 
   <!-- 1. Resident / family / visitor scans the QR code -->
   <section id="v-scan" class="qr stack" hidden>
-    <div class="stack" id="formArea">
-      <div><h1>Tell us how we're doing</h1><p class="lede">You reached this page from the QR code. Choose a tab to start.</p></div>
-      <div class="tabs" role="group" aria-label="Choose a tab">
-        <button class="tab" id="tabFb" aria-pressed="true" type="button">Tab 1: Feedback<span>Compliment, suggestion or complaint</span></button>
-        <button class="tab" id="tabFr" aria-pressed="false" type="button">Tab 2: FacilityBot<span>Report a fault or repair</span></button>
+    <div class="stack" id="chooseArea">
+      <div><h1>How can we help?</h1><p class="lede">Tap one to continue.</p></div>
+      <div class="choose" role="group" aria-label="Choose one">
+        <button class="big" id="tabFb" type="button"><b>Feedback</b><span>Compliment, suggestion or complaint</span></button>
+        <button class="big" id="tabFr" type="button"><b>Service request</b><span>Report a fault or ask for a repair</span></button>
       </div>
+    </div>
+    <div class="stack" id="formArea" hidden>
+      <div class="row"><button type="button" id="back">← Back</button></div>
+      <div><h1 id="formTitle">Feedback</h1><p class="lede" id="formLede"></p></div>
       <form id="form" class="panel stack" novalidate>
         <div class="stack" style="gap:6px">
           <span style="font-weight:500;font-size:14px" id="catLabel">Type of feedback</span>
@@ -156,6 +163,7 @@ td.n,th.n{text-align:right}
         <button class="primary" type="submit" id="fSubmit">Submit</button>
       </form>
     </div>
+    <p class="staff"><a href="#ops">Staff login: Operations</a></p>
     <div id="doneArea" class="panel done" hidden>
       <h2>Thank you. We have received it.</h2>
       <div class="ref" id="doneRef"></div>
@@ -195,7 +203,7 @@ td.n,th.n{text-align:right}
 (function(){
 const DEPTS=["Maintenance","Housekeeping","Nursing","Food & Beverage","Security","Administration"];
 const CATS={feedback:["Compliment","Suggestion","Complaint"],facility:["Fault","Repair"]};
-const S={cases:[],tab:"feedback",cat:"Compliment",filter:"open",sel:null,dept:DEPTS[0],month:"",store:null,live:false};
+const S={cases:[],tab:"feedback",cat:"Compliment",step:"choose",filter:"open",sel:null,dept:DEPTS[0],month:"",store:null,live:false};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const now=()=>new Date().toISOString();
@@ -236,7 +244,7 @@ function initStore(){
 }
 function setMode(){
   const m=$("mode");
-  if(S.live){m.hidden=true;return}
+  if(S.live||view()==="scan"){m.hidden=true;return}
   m.hidden=false;
   m.innerHTML=`Cases are saved in this browser only, so other phones won't see them. <button type="button" id="demo" style="margin-left:6px;padding:4px 10px">Load example cases</button>`;
   $("demo").onclick=()=>{demo().forEach(c=>local.save(c));toast("Example cases loaded")};
@@ -249,20 +257,25 @@ function view(){const v=(location.hash||"#scan").slice(1);return["scan","ops","d
 function render(){
   const v=view();
   document.querySelectorAll("nav a").forEach(a=>{if(a.dataset.view===v)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current")});
-  $("v-scan").hidden=v!=="scan";$("v-board").hidden=!(v==="ops"||v==="dept");$("v-report").hidden=v!=="report";
+  $("v-scan").hidden=v!=="scan";document.querySelector("header.bar").hidden=v==="scan";$("v-board").hidden=!(v==="ops"||v==="dept");$("v-report").hidden=v!=="report";
   if(v==="scan")renderForm();else if(v==="report")renderReport();else renderBoard(v);
 }
 
 function renderForm(){
-  $("tabFb").setAttribute("aria-pressed",S.tab==="feedback");$("tabFr").setAttribute("aria-pressed",S.tab==="facility");
+  $("mode").hidden=true;
+  $("chooseArea").hidden=S.step!=="choose";$("formArea").hidden=S.step!=="form";$("doneArea").hidden=S.step!=="done";
+  $("formTitle").textContent=S.tab==="feedback"?"Feedback":"Service request";
+  $("formLede").textContent=S.tab==="feedback"?"Tell us what went well or what we can do better.":"Tell us what needs fixing and where.";
   if(!CATS[S.tab].includes(S.cat))S.cat=CATS[S.tab][0];
   $("catLabel").textContent=S.tab==="feedback"?"Type of feedback":"What needs attention?";
   $("descLabel").textContent=S.tab==="feedback"?"Your feedback":"Describe the problem";
   $("fDesc").placeholder=S.tab==="feedback"?"Tell us what happened or what we could do better":"e.g. Shower in Room 12 has no hot water since this morning";
   $("cats").innerHTML=CATS[S.tab].map(c=>`<button type="button" class="chip" aria-pressed="${c===S.cat}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
 }
-$("tabFb").onclick=()=>{S.tab="feedback";renderForm()};
-$("tabFr").onclick=()=>{S.tab="facility";renderForm()};
+const pick=t=>{S.tab=t;S.cat=CATS[t][0];S.step="form";$("form").reset();renderForm();scrollTo(0,0)};
+$("tabFb").onclick=()=>pick("feedback");
+$("tabFr").onclick=()=>pick("facility");
+$("back").onclick=()=>{S.step="choose";renderForm();scrollTo(0,0)};
 $("cats").onclick=e=>{const b=e.target.closest("[data-cat]");if(b){S.cat=b.dataset.cat;renderForm()}};
 $("form").addEventListener("submit",async e=>{
   e.preventDefault();
@@ -273,15 +286,15 @@ $("form").addEventListener("submit",async e=>{
   const c={id:newId(S.tab),tab:S.tab,category:S.cat,location:$("fLoc").value.trim(),description:desc,
     name:anon?"":$("fName").value.trim(),contact:anon?"":$("fContact").value.trim(),role:$("fRole").value,
     createdAt:now(),ackAt:null,dept:null,assignedAt:null,info:"",closedAt:null,closeNote:"",
-    updates:[{at:now(),kind:"system",who:"System",text:S.tab==="feedback"?"Feedback submitted through QR code (Tab 1)":"Fault report received in FacilityBot (Tab 2)"}]};
+    updates:[{at:now(),kind:"system",who:"System",text:S.tab==="feedback"?"Feedback submitted through QR code":"Service request submitted through QR code (FacilityBot)"}]};
   $("fSubmit").disabled=true;
   try{await save(c);
-    $("formArea").hidden=true;$("doneArea").hidden=false;$("doneRef").textContent=c.id;
-    $("doneMsg").textContent=c.tab==="feedback"?"Keep this reference. Operations will acknowledge it within 1 working day.":"Keep this reference. Operations has your report and will pass it to the right team.";
+    S.step="done";renderForm();$("doneRef").textContent=c.id;
+    $("doneMsg").textContent=c.tab==="feedback"?"Keep this reference. Operations will acknowledge it within 1 working day.":"Keep this reference. Operations has your service request and will pass it to the right team.";
     $("form").reset();
   }catch(_){}finally{$("fSubmit").disabled=false}
 });
-$("again").onclick=()=>{$("formArea").hidden=false;$("doneArea").hidden=true};
+$("again").onclick=()=>{S.step="choose";renderForm()};
 
 /* board */
 const FILTERS={ops:[["open","Open"],["new","Needs action"],["dept","With department"],["closed","Closed"],["all","All"]],
@@ -316,7 +329,7 @@ $("deptSel").onchange=e=>{S.dept=e.target.value;S.sel=null;try{localStorage.setI
 function steps(c){
   const fb=c.tab==="feedback",st=stage(c),asked=c.updates.some(u=>u.kind==="ask");
   const L=[
-    [true,fb?"Submitted via Tab 1: Feedback":"Submitted via Tab 2: FacilityBot",fmt(c.createdAt)],
+    [true,fb?"Submitted via QR code: Feedback":"Submitted via QR code: Service request",fmt(c.createdAt)],
     [!!c.ackAt,fb?"Logged in Feedback Management database and acknowledged":"Fault report received in FacilityBot",c.ackAt?fmt(c.ackAt):(fb?"Due "+fmt(ackDeadline(c.createdAt).toISOString()):"Waiting for Operations")],
     [!!c.dept,"Assigned to department",c.dept?`${c.dept} · ${fmt(c.assignedAt)}`:"—"],
     [st==="progress"||!!c.closedAt&&c.updates.some(u=>u.kind==="dept"),"Department acts and updates Operations",(c.updates.filter(u=>u.kind==="dept").length||0)+" update(s)"],

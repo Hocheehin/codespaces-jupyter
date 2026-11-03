@@ -4,7 +4,7 @@ A single-page prototype for testing whether the SOP process flow works in practi
 
 | View | SOP step |
 |---|---|
-| `#scan` – QR form | Resident, family or visitor scans the QR code and chooses Tab 1 (Feedback: compliment / suggestion / complaint) or Tab 2 (FacilityBot: fault / repair) |
+| `#scan` – QR page | Resident, family or visitor scans the QR code and sees two buttons only: **Feedback** (compliment / suggestion / complaint) or **Service request** (FacilityBot: fault / repair). Tapping one opens its form |
 | `#ops` – Operations | Log and acknowledge (feedback must be acknowledged within 1 working day, so late cases are flagged) or receive the fault report, then assign to a department with information. Then either "Not resolved: ask the department for status" or "Resolved: close the case and inform the sender" |
 | `#dept` – Department | The department acts and updates Operations |
 | `#report` – Monthly report | Monthly report to the HONH: counts by type and department, acknowledgement rate, average time to close, open cases. You can copy it as text |
