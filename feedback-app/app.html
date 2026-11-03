@@ -102,6 +102,29 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .log .who{font-size:12px;color:var(--muted)}
 .action{border-top:1px solid var(--line);padding-top:14px}
 .empty{padding:24px;text-align:center;color:var(--muted)}
+
+/* dashboard */
+:root{--s-fb:#2a78d6;--s-sr:#eb6834;--grid:#e3e9e7}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--s-fb:#3987e5;--s-sr:#d95926;--grid:#26302e}}
+:root[data-theme="dark"]{--s-fb:#3987e5;--s-sr:#d95926;--grid:#26302e}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.hbars{display:flex;flex-direction:column;gap:10px}
+.hb{display:grid;grid-template-columns:96px minmax(0,1fr) 34px;gap:10px;align-items:center;font-size:14px}
+.hb .track{height:18px;position:relative}
+.hb .fill{height:100%;border-radius:0 4px 4px 0;min-width:2px}
+.hb .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.cols{display:flex;align-items:flex-end;gap:2px;height:180px;border-bottom:1px solid var(--line);background:linear-gradient(var(--grid) 1px,transparent 1px) 0 0/100% 25%;position:relative}
+.col{flex:1;display:flex;flex-direction:column-reverse;gap:2px;height:100%;justify-content:flex-start;cursor:default;min-width:0}
+.col i{display:block;width:100%}
+.col i.fb{background:var(--s-fb)}.col i.sr{background:var(--s-sr)}
+.col i:last-child{border-radius:4px 4px 0 0}
+.col:hover i,.col:focus i{filter:brightness(1.12)}
+.xax{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ymax{font-size:12px;color:var(--muted)}
+.tip{position:fixed;z-index:30;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.12);font-variant-numeric:tabular-nums}
+.stat .sw{width:8px;height:8px}
+#dash td{white-space:nowrap}
 /* report */
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 @media (max-width:640px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -123,6 +146,7 @@ td.n,th.n{text-align:right}
     <a href="#scan" data-view="scan">QR page</a>
     <a href="#ops" data-view="ops">Operations</a>
     <a href="#dept" data-view="dept">Department</a>
+    <a href="#dash" data-view="dash">Dashboard</a>
     <a href="#report" data-view="report">Monthly report</a>
   </nav>
 </div></header>
@@ -187,6 +211,15 @@ td.n,th.n{text-align:right}
     </div>
   </section>
 
+  <!-- Dashboard: submissions at a glance -->
+  <section id="v-dash" class="stack" hidden>
+    <div class="row" style="justify-content:space-between;gap:12px">
+      <div><h1>Submissions dashboard</h1><p class="lede">How many people used the QR code, and what they sent. Updates live as submissions arrive.</p></div>
+      <div class="filters" id="dPeriod" role="group" aria-label="Period"></div>
+    </div>
+    <div id="dash" class="stack"></div>
+  </section>
+
   <!-- 4. Monthly report -->
   <section id="v-report" class="stack" hidden>
     <div class="row" style="justify-content:space-between;gap:12px">
@@ -197,13 +230,14 @@ td.n,th.n{text-align:right}
     <div id="report" class="stack"></div>
   </section>
 </main>
+<div class="tip" id="tip" hidden></div>
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script>
 (function(){
 const DEPTS=["Maintenance","Housekeeping","Nursing","Food & Beverage","Security","Administration"];
 const CATS={feedback:["Compliment","Suggestion","Complaint"],facility:["Fault","Repair"]};
-const S={cases:[],tab:"feedback",cat:"Compliment",step:"choose",filter:"open",sel:null,dept:DEPTS[0],month:"",store:null,live:false};
+const S={cases:[],tab:"feedback",cat:"Compliment",step:"choose",period:"month",filter:"open",sel:null,dept:DEPTS[0],month:"",store:null,live:false};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const now=()=>new Date().toISOString();
@@ -253,12 +287,12 @@ function newId(tab){const d=new Date();const ym=String(d.getFullYear()).slice(2)
   return(tab==="feedback"?"FB-":"FR-")+ym+"-"+Math.random().toString(36).slice(2,6).toUpperCase()}
 
 /* ---------- views ---------- */
-function view(){const v=(location.hash||"#scan").slice(1);return["scan","ops","dept","report"].includes(v)?v:"scan"}
+function view(){const v=(location.hash||"#scan").slice(1);return["scan","ops","dept","dash","report"].includes(v)?v:"scan"}
 function render(){
   const v=view();
   document.querySelectorAll("nav a").forEach(a=>{if(a.dataset.view===v)a.setAttribute("aria-current","page");else a.removeAttribute("aria-current")});
-  $("v-scan").hidden=v!=="scan";document.querySelector("header.bar").hidden=v==="scan";$("v-board").hidden=!(v==="ops"||v==="dept");$("v-report").hidden=v!=="report";
-  if(v==="scan")renderForm();else if(v==="report")renderReport();else renderBoard(v);
+  $("v-scan").hidden=v!=="scan";document.querySelector("header.bar").hidden=v==="scan";$("v-board").hidden=!(v==="ops"||v==="dept");$("v-report").hidden=v!=="report";$("v-dash").hidden=v!=="dash";
+  if(v==="scan")renderForm();else if(v==="report")renderReport();else if(v==="dash")renderDash();else renderBoard(v);
 }
 
 function renderForm(){
@@ -413,6 +447,51 @@ function report(){}
 $("month").onchange=e=>{S.month=e.target.value;renderReport()};
 $("copyRep").onclick=()=>{const t=report.text||"";if(!t){toast("Nothing to copy for this month");return}
   navigator.clipboard.writeText(t).then(()=>toast("Report copied")).catch(()=>toast("Copy is blocked here. Select the figures on the page instead."))};
+
+
+/* dashboard */
+const PERIODS=[["month","This month"],["30","Last 30 days"],["all","All time"]];
+const dkey=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+function renderDash(){
+  $("dPeriod").innerHTML=PERIODS.map(([k,l])=>`<button type="button" class="chip" aria-pressed="${k===S.period}" data-p="${k}">${l}</button>`).join("");
+  const t=new Date(),start=S.period==="month"?new Date(t.getFullYear(),t.getMonth(),1):S.period==="30"?new Date(t.getFullYear(),t.getMonth(),t.getDate()-29):null;
+  const cs=S.cases.filter(c=>!start||new Date(c.createdAt)>=start);
+  const fb=cs.filter(c=>c.tab==="feedback"),sr=cs.filter(c=>c.tab!=="feedback");
+  const el=$("dash");
+  const tiles=`<div class="stats">
+    <div class="stat"><b>${cs.length}</b><span>Total submissions</span></div>
+    <div class="stat"><b>${fb.length}</b><span><i class="sw" style="background:var(--s-fb)"></i>Feedback</span></div>
+    <div class="stat"><b>${sr.length}</b><span><i class="sw" style="background:var(--s-sr)"></i>Service requests</span></div>
+    <div class="stat"><b>${cs.filter(c=>!c.closedAt).length}</b><span>Still open</span></div></div>`;
+  if(!cs.length){el.innerHTML=tiles+`<div class="panel empty">No submissions in this period yet. Scan the QR code and submit one to see it counted here.</div>`;return}
+  const legend=`<div class="legend"><span><i class="sw" style="background:var(--s-fb)"></i>Feedback</span><span><i class="sw" style="background:var(--s-sr)"></i>Service request</span></div>`;
+  const cats=[...CATS.feedback.map(k=>[k,"fb"]),...CATS.facility.map(k=>[k,"sr"])].map(([k,g])=>[k,g,cs.filter(c=>c.category===k).length]);
+  const mx=Math.max(1,...cats.map(x=>x[2]));
+  const bars=cats.map(([k,g,n])=>`<div class="hb" data-tip="${esc(k)}: ${n} submission${n===1?"":"s"} (${cs.length?Math.round(n/cs.length*100):0}%)"><span>${esc(k)}</span><span class="track"><span class="fill" style="display:block;width:${n/mx*100}%;background:var(--s-${g})"></span></span><span class="v">${n}</span></div>`).join("");
+  // per-day columns
+  const first=start||new Date(Math.min(...cs.map(c=>+new Date(c.createdAt))));
+  const days=[];for(let d=new Date(first.getFullYear(),first.getMonth(),first.getDate());d<=t;d.setDate(d.getDate()+1))days.push(new Date(d));
+  const shown=days.slice(-31);
+  const per=shown.map(d=>{const k=dkey(d),x=cs.filter(c=>dkey(new Date(c.createdAt))===k);return[d,x.filter(c=>c.tab==="feedback").length,x.filter(c=>c.tab!=="feedback").length]});
+  const dm=Math.max(1,...per.map(p=>p[1]+p[2]));const top=Math.ceil(dm/4)*4||4;
+  const dl=d=>d.toLocaleDateString(undefined,{day:"numeric",month:"short"});
+  const cols=per.map(([d,a,b])=>`<div class="col" tabindex="0" data-tip="${dl(d)}: ${a} feedback, ${b} service request${b===1?"":"s"}">${a?`<i class="fb" style="height:calc(${a/top*100}% - 2px)"></i>`:""}${b?`<i class="sr" style="height:calc(${b/top*100}% - 2px)"></i>`:""}</div>`).join("");
+  const comp=cats[2][2],compl=cats[0][2];
+  el.innerHTML=tiles+`<div class="grid2">
+    <div class="panel stack"><div class="row" style="justify-content:space-between"><h3>Submissions by type</h3>${legend}</div><div class="hbars">${bars}</div>
+      <p class="muted" style="font-size:13px">${compl} compliment${compl===1?"":"s"} and ${comp} complaint${comp===1?"":"s"} in this period.</p></div>
+    <div class="panel stack"><div class="row" style="justify-content:space-between"><h3>Submissions per day</h3>${legend}</div>
+      <span class="ymax">${top} per day</span><div class="cols" id="cols">${cols}</div>
+      <div class="xax"><span>${dl(shown[0])}</span><span>${dl(shown[shown.length-1])}</span></div></div></div>
+    <div class="panel stack"><h3>Latest submissions</h3><div class="tablewrap"><table><thead><tr><th>Ref</th><th>Type</th><th>Location</th><th>Received</th><th>Status</th></tr></thead><tbody>
+      ${cs.slice().sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,8).map(c=>`<tr><td class="mono">${esc(c.id)}</td><td>${c.tab==="feedback"?"Feedback":"Service request"} · ${esc(c.category)}</td><td>${esc(c.location||"—")}</td><td>${fmt(c.createdAt)}</td><td>${pill(c)}</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+$("dPeriod").onclick=e=>{const b=e.target.closest("[data-p]");if(b){S.period=b.dataset.p;renderDash()}};
+function showTip(e){const h=e.target.closest&&e.target.closest("[data-tip]"),tp=$("tip");if(!h){tp.hidden=true;return}
+  tp.textContent=h.dataset.tip;tp.hidden=false;const r=h.getBoundingClientRect();
+  tp.style.left=Math.max(8,Math.min(innerWidth-tp.offsetWidth-8,r.left+r.width/2-tp.offsetWidth/2))+"px";tp.style.top=Math.max(8,r.top-tp.offsetHeight-8)+"px"}
+$("dash").addEventListener("pointerover",showTip);$("dash").addEventListener("focusin",showTip);
+$("dash").addEventListener("pointerleave",()=>$("tip").hidden=true);$("dash").addEventListener("focusout",()=>$("tip").hidden=true);
 
 /* example cases for the browser-only mode */
 function demo(){const ago=h=>new Date(Date.now()-h*36e5).toISOString();const ex=(id,tab,cat,loc,desc,h,extra)=>Object.assign({id:"EX-"+id,tab,category:cat,location:loc,description:"[Example] "+desc,name:"",contact:"",role:"Family member",
