@@ -244,6 +244,7 @@ td.n,th.n{text-align:right}
 
 <script>
 (function(){
+const HOSTED=!!(window.claude&&window.claude.use);
 const SITES=["Site 1","Site 2","Site 3"];
 const DEPTS=["Maintenance","Housekeeping","Nursing","Food & Beverage","Security","Administration"];
 const CATS={feedback:["Compliment","Suggestion","Complaint"],facility:["Fault","Repair"]};
@@ -273,22 +274,25 @@ const local={
 async function save(c){
   c.updatedAt=now();
   if(S.store){try{await S.store.doc(c.id).set(c)}catch(e){toast(e&&e.code==="not_granted"?"You don't have permission to save. Ask the owner for Contributor access.":"Couldn't save. Check your connection and try again.");throw e}}
+  else if(HOSTED){toast(S.dbNull?"Sign in to claude.ai to submit. Nothing was sent.":"Still connecting. Try again in a few seconds.");throw new Error("no store")}
   else local.save(c);
 }
 function initStore(){
   S.cases=local.load();render();
-  const timer=setTimeout(()=>{if(!S.live)setMode()},10000);
+  const timer=setTimeout(()=>{if(!S.live){S.dbNull=true;setMode()}},10000);
   const p=window.claude&&window.claude.use?window.claude.use("db"):Promise.resolve(null);
   p.then(db=>{
-    if(!db){clearTimeout(timer);setMode();return}
+    if(!db){clearTimeout(timer);S.dbNull=true;setMode();return}
     S.store=db.collection("cases");
     S.store.onSnapshot(snap=>{clearTimeout(timer);S.live=true;S.cases=snap.docs.map(d=>d.data());setMode();render()},
-      ()=>{clearTimeout(timer);S.store=null;setMode()});
-  }).catch(()=>{clearTimeout(timer);setMode()});
+      ()=>{clearTimeout(timer);S.store=null;S.dbNull=true;setMode()});
+  }).catch(()=>{clearTimeout(timer);S.dbNull=true;setMode()});
 }
 function setMode(){
   const m=$("mode");
-  if(S.live||view()==="scan"){m.hidden=true;return}
+  if(S.live){m.hidden=true;return}
+  if(HOSTED&&S.dbNull){m.hidden=false;m.textContent="You're not signed in to claude.ai, so this page can't send submissions. Sign in with an account that has access to this page, then reload.";return}
+  if(view()==="scan"){m.hidden=true;return}
   m.hidden=false;
   m.innerHTML=`Cases are saved in this browser only, so other phones won't see them. <button type="button" id="demo" style="margin-left:6px;padding:4px 10px">Load example cases</button>`;
   $("demo").onclick=()=>{demo().forEach(c=>local.save(c));toast("Example cases loaded")};
@@ -306,7 +310,7 @@ function render(){
 }
 
 function renderForm(){
-  $("mode").hidden=true;
+  setMode();
   $("siteArea").hidden=S.step!=="site";$("chooseArea").hidden=S.step!=="choose";
   $("sites").innerHTML=SITES.map(x=>`<button class="big" type="button" data-site="${esc(x)}"><b>${esc(x)}</b></button>`).join("");
   $("siteTag1").textContent=$("siteTag2").textContent=S.site||"";$("formArea").hidden=S.step!=="form";$("doneArea").hidden=S.step!=="done";
