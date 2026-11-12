@@ -170,8 +170,10 @@ def page_dashboard() -> None:
     weekly = (
         df.assign(week=pd.to_datetime(df["check_date"]).dt.to_period("W").dt.start_time)
         .groupby(["week", "status"]).size().unstack(fill_value=0)
+        .reindex(columns=STATUSES, fill_value=0)
     )
-    st.bar_chart(weekly)
+    weekly.index = [d.strftime("%Y-%m-%d") for d in weekly.index]
+    st.bar_chart(weekly, color=["#2e9e5b", "#d64545", "#e8a33d"], x_label="Week starting", y_label="Checks")
 
     c1, c2 = st.columns(2)
     with c1:
